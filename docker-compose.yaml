@@ -1,0 +1,30 @@
+version: '3.9'
+
+services:
+  server:
+    build: .
+    ports: 
+      - "8081:8080"
+  db:
+    image: 'postgres'
+    ports:
+      - '4444:5432'
+    volumes:
+      - mydata2:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: 'postgres'
+      POSTGRES_PASSWORD: 'postgres'
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - '9090:9090'
+    volumes:
+      - ./prometheus:/etc/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    depends_on:
+      - server
+      - db
+
+volumes:
+  mydata2:
