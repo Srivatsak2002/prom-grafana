@@ -4,6 +4,14 @@ const client = require("prom-client");
 const app = express();
 const clientConnection = require("./connection.js");
 
+
+const gauge = new client.Gauge({
+  name: 'metric_name',
+  help: 'metric_help',
+  labelNames: ['api', 'statusCode','response_size','request_size','response_time'],
+});
+
+
 const apiCallsCounter = new client.Counter({
   name: "api_calls_total",
   help: "Total number of API calls",
@@ -35,21 +43,20 @@ app.listen(8080, () => {
 app.get("/metrics", async (req, res) => {
   try {
     const metricsData = await client.register.metrics();
-    res.set("Content-Type", client.register.contentType);
     res.end(metricsData);
-    console.log(metricsData);
+    //console.log(metricsData);
   } catch (error) {
     console.error("Error generating metrics:", error);
     res.status(500).send("Internal Server Error");
   }
 });
 
-
+//contentlength
 
 app.get("/create", async (req, res) => {
   console.log("create triggred")
   try {
-      const createTableQuery = `
+    const createTableQuery = `
           CREATE TABLE IF NOT EXISTS datasets (
               id TEXT PRIMARY KEY,
               dataset_id TEXT,
@@ -72,11 +79,11 @@ app.get("/create", async (req, res) => {
               published_date TIMESTAMP NOT NULL DEFAULT now()
           )
       `;
-      await clientConnection.query(createTableQuery);
-      res.status(200).json({ message: "Table created successfully" });
+    await clientConnection.query(createTableQuery);
+    res.status(200).json({ message: "Table created successfully" });
   } catch (error) {
-      console.error("Error creating table:", error.message);
-      res.status(500).json({ error: "Internal server error" });
+    console.error("Error creating table:", error.message);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -102,7 +109,7 @@ app.get("/v1/datasets/:id", (req, res) => {
   console.log("gettriggred")
   const id = req.params.id;
   const query = 'SELECT * FROM datasets WHERE id = $1;';
-
+  
   clientConnection.query(query, [id], (err, result) => {
     if (!err) {
       if (result.rows.length === 0) {
@@ -170,7 +177,10 @@ app.get("/v1/datasets", (req, res) => {
 app.post("/v1/datasets", (req, res) => {
   apiCallsCounter.inc();
   const datasetData = req.body;
-
+  const contentLength = req.get('Content-Length');
+  console.log(details.req.bytes)
+  console.log(contentLength)
+  gauge.labels({ api:'post', statusCode:'200',response_size:'6b',request_size:contentLength,response_time:'2s' }).inc();
   const missingFields = [];
   if (!datasetData.id) {
     missingFields.push('id');
@@ -265,6 +275,7 @@ app.patch("/v1/datasets/:id", (req, res) => {
   apiCallsCounter.inc();
   const id = req.params.id;
   const updatedFields = req.body;
+  gauge.labels({ api:'patch', statusCode:'200',response_size:'6b',request_size:'5b',response_time:'3s' }).inc();
 
   if (Object.keys(updatedFields).length === 0) {
     failedApiCallsCounter.inc();
