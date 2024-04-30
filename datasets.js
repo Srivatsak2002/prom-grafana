@@ -4,23 +4,22 @@ const client = require("prom-client");
 const app = express();
 const clientConnection = require("./connection.js");
 
-// Define metrics
 const apiCallsCounter = new client.Counter({
-  name: "dataset_service_api_calls_total",
-  help: "Total number of API calls to the dataset service",
+  name: "api_calls_total",
+  help: "Total number of API calls",
 });
 
 const successfulApiCallsCounter = new client.Counter({
-  name: "dataset_service_successful_api_calls_total",
-  help: "Total number of successful API calls to the dataset service",
+  name: "successful_api_calls_total",
+  help: "Total number of successful API calls",
 });
 
 const failedApiCallsCounter = new client.Counter({
-  name: "dataset_service_failed_api_calls_total",
-  help: "Total number of failed API calls to the dataset service",
+  name: "failed_api_calls_total",
+  help: "Total number of failed API calls",
 });
 
-// Middleware to track API calls
+
 app.use((req, res, next) => {
   apiCallsCounter.inc();
   next();
@@ -32,12 +31,19 @@ app.listen(8080, () => {
   console.log("Server is now listening at port 8080");
 });
 
-// Metrics endpoint for Prometheus
-app.get("/metrics", (req, res) => {
-  res.set("Content-Type", client.register.contentType);
-  res.end(client.register.metrics());
-  console.log("promtriggred")
+
+app.get("/metrics", async (req, res) => {
+  try {
+    const metricsData = await client.register.metrics();
+    res.set("Content-Type", client.register.contentType);
+    res.end(metricsData);
+    console.log(metricsData);
+  } catch (error) {
+    console.error("Error generating metrics:", error);
+    res.status(500).send("Internal Server Error");
+  }
 });
+
 
 
 app.get("/create", async (req, res) => {
@@ -91,7 +97,7 @@ app.get("/create", async (req, res) => {
 
 
 
-// API endpoints
+
 app.get("/v1/datasets/:id", (req, res) => {
   console.log("gettriggred")
   const id = req.params.id;

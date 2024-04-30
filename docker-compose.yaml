@@ -4,7 +4,7 @@ services:
   server:
     build: .
     ports: 
-      - "8081:8080"
+      - "8080:8080"
   db:
     image: 'postgres'
     ports:
@@ -16,15 +16,15 @@ services:
       POSTGRES_PASSWORD: 'postgres'
   prometheus:
     image: prom/prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus/data
     ports:
       - '9090:9090'
-    volumes:
-      - ./prometheus:/etc/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
     depends_on:
       - server
       - db
 
 volumes:
   mydata2:
+  prometheus_data:
