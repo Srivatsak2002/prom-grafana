@@ -1,30 +1,35 @@
 //console.log("hello")
 const express = require("express");
-const client = require("prom-client");
+//const client = require("prom-client");
 const app = express();
 const clientConnection = require("./connection.js");
 const responseTime = require('response-time');
-
-const Counter = new client.Counter({
-  name: 'metric_name',
-  help: 'api_calls_counter',
-  labelNames: ['api', 'statusCode', 'response_size', 'request_size', 'response_time'],
-});
-
-const gauge = new client.Gauge({
-  name: 'response_time',
-  help: 'response_time_gauge',
-  labelNames: ['api', 'statusCode', 'response_size', 'request_size', 'response_time'],
-});
-
+const { counter } = require('./metrics.js')
+const { gauge } = require('./metrics.js')
+const { client } = require('./metrics.js')
 app.use(express.json());
 
-app.use(responseTime({ suffix: false }));
+//app.use(responseTime({ suffix: false }));
+
+app.use(responseTime({ suffix: false }), (req, res, next) => {
+  if (req.path !== "/metrics") {
+    const requestSize = req.socket.bytesRead;
+    res.on('finish', () => {
+      const responseSize = req.socket.bytesWritten;
+      const responseTime = parseFloat(res.get('X-Response-Time'));
+      const statusCode = res.statusCode
+      counter.labels({ api: req.method, statusCode: statusCode, response_size: responseSize, request_size: requestSize, response_time: responseTime }).inc();
+      gauge.labels({ api: req.method, statusCode: statusCode, response_size: responseSize, request_size: requestSize }).set(responseTime);
+    });
+  }
+  next();
+});
+
+
 
 app.listen(8080, () => {
   console.log("Server is now listening at port 8080");
 });
-
 
 app.get("/metrics", async (req, res) => {
   try {
@@ -36,10 +41,14 @@ app.get("/metrics", async (req, res) => {
   }
 });
 
-app.get("/v1/datasets/:id", (req, res) => {
+
+
+
+
+
+app.get("/v1/datasets/:id", function (req, res) {
   const id = req.params.id;
   const query = 'SELECT * FROM datasets WHERE id = $1;';
-  const requestSize = req.socket.bytesRead
   clientConnection.query(query, [id], (err, result) => {
     if (!err) {
       if (result.rows.length === 0) {
@@ -56,12 +65,6 @@ app.get("/v1/datasets/:id", (req, res) => {
           result: {}
         };
         res.status(404).send(errorResponse);
-        const responseSize = req.socket.bytesWritten
-        const responseTime = res.get('X-Response-Time');
-        const responseTimeNumber = parseFloat(responseTime);
-        Counter.labels({ api: 'api.dataset.read', statusCode: 404, response_size: responseSize, request_size: requestSize, response_time: responseTime }).inc();
-        gauge.labels({ api: 'api.dataset.read', statusCode: 404, response_size: responseSize, request_size: requestSize, response_time: responseTime }).set(responseTimeNumber);
-
       } else {
         const successresponse = {
           "id": "api.dataset.read",
@@ -76,12 +79,6 @@ app.get("/v1/datasets/:id", (req, res) => {
           "result": result.rows[0]
         }
         res.send(successresponse)
-        const responseSize = req.socket.bytesWritten
-        const responseTime = res.get('X-Response-Time');
-        const responseTimeNumber = parseFloat(responseTime);
-
-        Counter.labels({ api: 'api.dataset.read', statusCode: 200, response_size: responseSize, request_size: requestSize, response_time: responseTime }).inc();
-        gauge.labels({ api: 'api.dataset.read', statusCode: 200, response_size: responseSize, request_size: requestSize, response_time: responseTime }).set(responseTimeNumber);
 
       }
     } else {
@@ -99,15 +96,11 @@ app.get("/v1/datasets/:id", (req, res) => {
         result: {}
       };
       res.status(500).send(errorResponse);
-      const responseSize = req.socket.bytesWritten
-      const responseTime = res.get('X-Response-Time');
-      const responseTimeNumber = parseFloat(responseTime);
-      Counter.labels({ api: 'api.dataset.read', statusCode: 500, response_size: responseSize, request_size: requestSize, response_time: responseTime }).inc();
-      gauge.labels({ api: 'api.dataset.read', statusCode: 500, response_size: responseSize, request_size: requestSize, response_time: responseTime }).set(responseTimeNumber);
 
     }
   });
 });
+
 /*
 app.get("/v1/datasets", (req, res) => {
   clientConnection.query(`select * from datasets;`, (err, result) => {
@@ -120,12 +113,8 @@ app.get("/v1/datasets", (req, res) => {
 });
 */
 
-
-
-
 app.post("/v1/datasets", (req, res) => {
   const datasetData = req.body;
-  const requestSize = req.socket.bytesRead;
 
   const missingFields = [];
   if (!datasetData.id) {
@@ -139,7 +128,7 @@ app.post("/v1/datasets", (req, res) => {
   }
 
   if (missingFields.length > 0) {
-     res.status(400).send({
+    return res.status(400).send({
       "id": "api.dataset.create",
       "ver": "1.0",
       "ts": new Date(),
@@ -151,13 +140,7 @@ app.post("/v1/datasets", (req, res) => {
       "responseCode": "BAD REQUEST",
       "result": null
     });
-    const responseSize = req.socket.bytesWritten;
-    const responseTime = res.get('X-Response-Time');
-    const responseTimeNumber = parseFloat(responseTime);
-    
-    Counter.labels({ api: 'api.dataset.create', statusCode: 400, response_size: responseSize, request_size: requestSize, response_time: responseTime }).inc();
-    gauge.labels({ api: 'api.dataset.create', statusCode: 400, response_size: responseSize, request_size: requestSize, response_time: responseTime }).set(responseTimeNumber);
-    return;
+
   }
 
   const insertQuery = `INSERT INTO datasets (id, dataset_id, type, name, validation_config, extraction_config, 
@@ -203,13 +186,6 @@ app.post("/v1/datasets", (req, res) => {
           "id": datasetData.id
         }
       });
-      const responseSize = req.socket.bytesWritten;
-      const responseTime = res.get('X-Response-Time');
-      const responseTimeNumber = parseFloat(responseTime);
-      
-      Counter.labels({ api: 'api.dataset.create', statusCode: 200, response_size: responseSize, request_size: requestSize, response_time: responseTime }).inc();
-      gauge.labels({ api: 'api.dataset.create', statusCode: 200, response_size: responseSize, request_size: requestSize, response_time: responseTime }).set(responseTimeNumber);
- 
     } else {
       console.error(err.message);
       res.status(500).send({
@@ -224,12 +200,6 @@ app.post("/v1/datasets", (req, res) => {
         "responseCode": "INTERNAL_SERVER_ERROR",
         "result": null
       });
-      const responseSize = req.socket.bytesWritten;
-      const responseTime = res.get('X-Response-Time');
-      const responseTimeNumber = parseFloat(responseTime);
-      
-      Counter.labels({ api: 'api.dataset.create', statusCode: 500, response_size: responseSize, request_size: requestSize, response_time: responseTime }).inc();
-      gauge.labels({ api: 'api.dataset.create', statusCode: 500, response_size: responseSize, request_size: requestSize, response_time: responseTime }).set(responseTimeNumber);
     }
   });
 
@@ -238,6 +208,7 @@ app.post("/v1/datasets", (req, res) => {
 app.patch("/v1/datasets/:id", (req, res) => {
   const id = req.params.id;
   const updatedFields = req.body;
+
 
   if (Object.keys(updatedFields).length === 0) {
     return res.status(400).send({
@@ -252,6 +223,7 @@ app.patch("/v1/datasets/:id", (req, res) => {
       "responseCode": "BAD REQUEST",
       "result": null
     });
+
   }
 
   let setClause = '';
@@ -316,14 +288,12 @@ app.patch("/v1/datasets/:id", (req, res) => {
 });
 
 app.delete("/v1/datasets/:id", (req, res) => {
-  apiCallsCounter.inc();
   const datasetsId = req.params.id;
 
   const deleteQuery = `DELETE FROM datasets WHERE id = '${datasetsId}';`;
 
   clientConnection.query(deleteQuery, (err, result) => {
     if (!err) {
-      successfulApiCallsCounter.inc();
       if (result.rowCount === 0) {
         res.status(404).send({
           "id": "api.dataset.delete",
@@ -354,7 +324,6 @@ app.delete("/v1/datasets/:id", (req, res) => {
         });
       }
     } else {
-      failedApiCallsCounter.inc();
       res.status(500).send({
         "id": "api.dataset.delete",
         "ver": "1.0",
