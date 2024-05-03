@@ -1,39 +1,25 @@
-console.log("hello")
+//console.log("hello")
 const express = require("express");
 const client = require("prom-client");
 const app = express();
 const clientConnection = require("./connection.js");
+const responseTime = require('response-time');
 
+const Counter = new client.Counter({
+  name: 'metric_name',
+  help: 'api_calls_counter',
+  labelNames: ['api', 'statusCode', 'response_size', 'request_size', 'response_time'],
+});
 
 const gauge = new client.Gauge({
-  name: 'metric_name',
-  help: 'metric_help',
-  labelNames: ['api', 'statusCode','response_size','request_size','response_time'],
-});
-
-
-const apiCallsCounter = new client.Counter({
-  name: "api_calls_total",
-  help: "Total number of API calls",
-});
-
-const successfulApiCallsCounter = new client.Counter({
-  name: "successful_api_calls_total",
-  help: "Total number of successful API calls",
-});
-
-const failedApiCallsCounter = new client.Counter({
-  name: "failed_api_calls_total",
-  help: "Total number of failed API calls",
-});
-
-
-app.use((req, res, next) => {
-  apiCallsCounter.inc();
-  next();
+  name: 'response_time',
+  help: 'response_time_gauge',
+  labelNames: ['api', 'statusCode', 'response_size', 'request_size', 'response_time'],
 });
 
 app.use(express.json());
+
+app.use(responseTime({ suffix: false }));
 
 app.listen(8080, () => {
   console.log("Server is now listening at port 8080");
@@ -44,76 +30,19 @@ app.get("/metrics", async (req, res) => {
   try {
     const metricsData = await client.register.metrics();
     res.end(metricsData);
-    //console.log(metricsData);
   } catch (error) {
     console.error("Error generating metrics:", error);
     res.status(500).send("Internal Server Error");
   }
 });
 
-//contentlength
-
-app.get("/create", async (req, res) => {
-  console.log("create triggred")
-  try {
-    const createTableQuery = `
-          CREATE TABLE IF NOT EXISTS datasets (
-              id TEXT PRIMARY KEY,
-              dataset_id TEXT,
-              type TEXT NOT NULL,
-              name TEXT,
-              validation_config JSON,
-              extraction_config JSON,
-              dedup_config JSON,
-              data_schema JSON,
-              denorm_config JSON,
-              router_config JSON,
-              dataset_config JSON,
-              status TEXT,
-              tags TEXT[],
-              data_version INT,
-              created_by TEXT,
-              updated_by TEXT,
-              created_date TIMESTAMP NOT NULL DEFAULT now(),
-              updated_date TIMESTAMP NOT NULL,
-              published_date TIMESTAMP NOT NULL DEFAULT now()
-          )
-      `;
-    await clientConnection.query(createTableQuery);
-    res.status(200).json({ message: "Table created successfully" });
-  } catch (error) {
-    console.error("Error creating table:", error.message);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 app.get("/v1/datasets/:id", (req, res) => {
-  console.log("gettriggred")
   const id = req.params.id;
   const query = 'SELECT * FROM datasets WHERE id = $1;';
-  
+  const requestSize = req.socket.bytesRead
   clientConnection.query(query, [id], (err, result) => {
     if (!err) {
       if (result.rows.length === 0) {
-        failedApiCallsCounter.inc();
         const errorResponse = {
           id: "api.dataset.read",
           ver: "1.0",
@@ -127,9 +56,14 @@ app.get("/v1/datasets/:id", (req, res) => {
           result: {}
         };
         res.status(404).send(errorResponse);
+        const responseSize = req.socket.bytesWritten
+        const responseTime = res.get('X-Response-Time');
+        const responseTimeNumber = parseFloat(responseTime);
+        Counter.labels({ api: 'api.dataset.read', statusCode: 404, response_size: responseSize, request_size: requestSize, response_time: responseTime }).inc();
+        gauge.labels({ api: 'api.dataset.read', statusCode: 404, response_size: responseSize, request_size: requestSize, response_time: responseTime }).set(responseTimeNumber);
+
       } else {
-        successfulApiCallsCounter.inc();
-        res.send({
+        const successresponse = {
           "id": "api.dataset.read",
           "ver": "1.0",
           "ts": new Date(),
@@ -140,11 +74,18 @@ app.get("/v1/datasets/:id", (req, res) => {
           },
           "responseCode": "OK",
           "result": result.rows[0]
-        });
+        }
+        res.send(successresponse)
+        const responseSize = req.socket.bytesWritten
+        const responseTime = res.get('X-Response-Time');
+        const responseTimeNumber = parseFloat(responseTime);
+
+        Counter.labels({ api: 'api.dataset.read', statusCode: 200, response_size: responseSize, request_size: requestSize, response_time: responseTime }).inc();
+        gauge.labels({ api: 'api.dataset.read', statusCode: 200, response_size: responseSize, request_size: requestSize, response_time: responseTime }).set(responseTimeNumber);
+
       }
     } else {
       console.error(err.message);
-      failedApiCallsCounter.inc();
       const errorResponse = {
         id: "api.dataset.read",
         ver: "1.0",
@@ -158,29 +99,34 @@ app.get("/v1/datasets/:id", (req, res) => {
         result: {}
       };
       res.status(500).send(errorResponse);
+      const responseSize = req.socket.bytesWritten
+      const responseTime = res.get('X-Response-Time');
+      const responseTimeNumber = parseFloat(responseTime);
+      Counter.labels({ api: 'api.dataset.read', statusCode: 500, response_size: responseSize, request_size: requestSize, response_time: responseTime }).inc();
+      gauge.labels({ api: 'api.dataset.read', statusCode: 500, response_size: responseSize, request_size: requestSize, response_time: responseTime }).set(responseTimeNumber);
+
     }
   });
 });
-
+/*
 app.get("/v1/datasets", (req, res) => {
   clientConnection.query(`select * from datasets;`, (err, result) => {
     if (!err) {
-      successfulApiCallsCounter.inc();
       res.send(result.rows);
     } else {
-      failedApiCallsCounter.inc();
       console.error(err.message);
     }
   });
 });
+*/
+
+
+
 
 app.post("/v1/datasets", (req, res) => {
-  apiCallsCounter.inc();
   const datasetData = req.body;
-  const contentLength = req.get('Content-Length');
-  console.log(details.req.bytes)
-  console.log(contentLength)
-  gauge.labels({ api:'post', statusCode:'200',response_size:'6b',request_size:contentLength,response_time:'2s' }).inc();
+  const requestSize = req.socket.bytesRead;
+
   const missingFields = [];
   if (!datasetData.id) {
     missingFields.push('id');
@@ -193,8 +139,7 @@ app.post("/v1/datasets", (req, res) => {
   }
 
   if (missingFields.length > 0) {
-    failedApiCallsCounter.inc();
-    return res.status(400).send({
+     res.status(400).send({
       "id": "api.dataset.create",
       "ver": "1.0",
       "ts": new Date(),
@@ -206,6 +151,13 @@ app.post("/v1/datasets", (req, res) => {
       "responseCode": "BAD REQUEST",
       "result": null
     });
+    const responseSize = req.socket.bytesWritten;
+    const responseTime = res.get('X-Response-Time');
+    const responseTimeNumber = parseFloat(responseTime);
+    
+    Counter.labels({ api: 'api.dataset.create', statusCode: 400, response_size: responseSize, request_size: requestSize, response_time: responseTime }).inc();
+    gauge.labels({ api: 'api.dataset.create', statusCode: 400, response_size: responseSize, request_size: requestSize, response_time: responseTime }).set(responseTimeNumber);
+    return;
   }
 
   const insertQuery = `INSERT INTO datasets (id, dataset_id, type, name, validation_config, extraction_config, 
@@ -237,8 +189,7 @@ app.post("/v1/datasets", (req, res) => {
 
   clientConnection.query(insertQuery, values, (err, result) => {
     if (!err) {
-      successfulApiCallsCounter.inc();
-      res.status(201).send({
+      res.status(200).send({
         "id": "api.dataset.create",
         "ver": "1.0",
         "ts": new Date(),
@@ -252,9 +203,15 @@ app.post("/v1/datasets", (req, res) => {
           "id": datasetData.id
         }
       });
+      const responseSize = req.socket.bytesWritten;
+      const responseTime = res.get('X-Response-Time');
+      const responseTimeNumber = parseFloat(responseTime);
+      
+      Counter.labels({ api: 'api.dataset.create', statusCode: 200, response_size: responseSize, request_size: requestSize, response_time: responseTime }).inc();
+      gauge.labels({ api: 'api.dataset.create', statusCode: 200, response_size: responseSize, request_size: requestSize, response_time: responseTime }).set(responseTimeNumber);
+ 
     } else {
       console.error(err.message);
-      failedApiCallsCounter.inc();
       res.status(500).send({
         "id": "api.dataset.create",
         "ver": "1.0",
@@ -267,18 +224,22 @@ app.post("/v1/datasets", (req, res) => {
         "responseCode": "INTERNAL_SERVER_ERROR",
         "result": null
       });
+      const responseSize = req.socket.bytesWritten;
+      const responseTime = res.get('X-Response-Time');
+      const responseTimeNumber = parseFloat(responseTime);
+      
+      Counter.labels({ api: 'api.dataset.create', statusCode: 500, response_size: responseSize, request_size: requestSize, response_time: responseTime }).inc();
+      gauge.labels({ api: 'api.dataset.create', statusCode: 500, response_size: responseSize, request_size: requestSize, response_time: responseTime }).set(responseTimeNumber);
     }
   });
+
 });
 
 app.patch("/v1/datasets/:id", (req, res) => {
-  apiCallsCounter.inc();
   const id = req.params.id;
   const updatedFields = req.body;
-  gauge.labels({ api:'patch', statusCode:'200',response_size:'6b',request_size:'5b',response_time:'3s' }).inc();
 
   if (Object.keys(updatedFields).length === 0) {
-    failedApiCallsCounter.inc();
     return res.status(400).send({
       "id": "api.dataset.update",
       "ver": "1.0",
@@ -307,7 +268,6 @@ app.patch("/v1/datasets/:id", (req, res) => {
 
   clientConnection.query(updateQuery, values, (err, result) => {
     if (!err) {
-      successfulApiCallsCounter.inc();
       if (result.rowCount === 0) {
         res.status(404).send({
           "id": "api.dataset.update",
@@ -339,7 +299,6 @@ app.patch("/v1/datasets/:id", (req, res) => {
       }
     } else {
       console.error(err.message);
-      failedApiCallsCounter.inc();
       res.status(500).send({
         "id": "api.dataset.update",
         "ver": "1.0",
