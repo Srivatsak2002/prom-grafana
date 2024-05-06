@@ -7,8 +7,6 @@ services:
       - "8080:8080"
   db:
     image: 'postgres'
-    ports:
-      - '4444:5432'
     volumes:
       - mydata2:/var/lib/postgresql/data
     environment:
@@ -18,13 +16,23 @@ services:
     image: prom/prometheus
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus/data
+      - prometheus-data:/prometheus
     ports:
       - '9090:9090'
     depends_on:
       - server
       - db
-
+  grafana:
+    image: grafana/grafana
+    volumes:
+      - grafana-data:/var/lib/grafana
+    ports:
+      - 3000:3000
+    depends_on:
+      - server
+      - db
+      - prometheus
 volumes:
   mydata2:
-  prometheus_data:
+  prometheus-data:
+  grafana-data:

@@ -1,6 +1,5 @@
 //console.log("hello")
 const express = require("express");
-//const client = require("prom-client");
 const app = express();
 const clientConnection = require("./connection.js");
 const responseTime = require('response-time');
@@ -9,7 +8,6 @@ const { gauge } = require('./metrics.js')
 const { client } = require('./metrics.js')
 app.use(express.json());
 
-//app.use(responseTime({ suffix: false }));
 
 app.use(responseTime({ suffix: false }), (req, res, next) => {
   if (req.path !== "/metrics") {
@@ -17,9 +15,8 @@ app.use(responseTime({ suffix: false }), (req, res, next) => {
     res.on('finish', () => {
       const responseSize = req.socket.bytesWritten;
       const responseTime = parseFloat(res.get('X-Response-Time'));
-      const statusCode = res.statusCode
-      counter.labels({ api: req.method, statusCode: statusCode, response_size: responseSize, request_size: requestSize, response_time: responseTime }).inc();
-      gauge.labels({ api: req.method, statusCode: statusCode, response_size: responseSize, request_size: requestSize }).set(responseTime);
+      counter.labels({ api:req.method, statusCode: res.statusCode , response_size: responseSize, request_size: requestSize,response_time:responseTime }).inc();
+      gauge.labels({ api:req.method, statusCode: res.statusCode, response_size: responseSize, request_size: requestSize }).set(responseTime);
     });
   }
   next();
@@ -40,10 +37,6 @@ app.get("/metrics", async (req, res) => {
     res.status(500).send("Internal Server Error");
   }
 });
-
-
-
-
 
 
 app.get("/v1/datasets/:id", function (req, res) {
@@ -101,7 +94,7 @@ app.get("/v1/datasets/:id", function (req, res) {
   });
 });
 
-/*
+
 app.get("/v1/datasets", (req, res) => {
   clientConnection.query(`select * from datasets;`, (err, result) => {
     if (!err) {
@@ -111,7 +104,7 @@ app.get("/v1/datasets", (req, res) => {
     }
   });
 });
-*/
+
 
 app.post("/v1/datasets", (req, res) => {
   const datasetData = req.body;
