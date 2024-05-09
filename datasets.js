@@ -3,9 +3,7 @@ const express = require("express");
 const app = express();
 const clientConnection = require("./connection.js");
 const responseTime = require('response-time');
-const { counter } = require('./metrics.js')
-const { gauge } = require('./metrics.js')
-const { client } = require('./metrics.js')
+const { apiCallsCounter, responseTimeGauge, requestSizeGauge, responseSizeGauge, client } = require('./metrics');
 app.use(express.json());
 
 
@@ -15,8 +13,16 @@ app.use(responseTime({ suffix: false }), (req, res, next) => {
     res.on('finish', () => {
       const responseSize = req.socket.bytesWritten;
       const responseTime = parseFloat(res.get('X-Response-Time'));
-      counter.labels({ api:req.method, statusCode: res.statusCode , response_size: responseSize, request_size: requestSize,response_time:responseTime }).inc();
-      gauge.labels({ api:req.method, statusCode: res.statusCode, response_size: responseSize, request_size: requestSize }).set(responseTime);
+      apiCallsCounter.labels({ api:req.method, statusCode: res.statusCode}).inc();
+      /*
+      responseTimeGauge.labels({ api:req.method, statusCode: res.statusCode, requestID: req.headers['postman-token']}).set(responseTime);
+      requestSizeGauge.labels({ api:req.method, statusCode: res.statusCode, requestID: req.headers['postman-token']}).set(requestSize);
+      responseSizeGauge.labels({ api:req.method, statusCode: res.statusCode, requestID: req.headers['postman-token']}).set(responseSize);
+      */
+      responseTimeGauge.labels({ api:req.method, statusCode: res.statusCode}).set(responseTime);
+      requestSizeGauge.labels({ api:req.method, statusCode: res.statusCode}).set(requestSize);
+      responseSizeGauge.labels({ api:req.method, statusCode: res.statusCode,}).set(responseSize);
+ 
     });
   }
   next();
