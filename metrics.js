@@ -6,6 +6,12 @@ const apiCallsCounter = new client.Counter({
     labelNames: ['api', 'statusCode'],
 });
 
+const gaugecounter = new client.Counter({
+    name: 'gauge_calls_total',
+    help: 'Total number of API calls',
+    labelNames: ['api', 'statusCode'],
+});
+
 const responseTimeGauge = new client.Gauge({
     name: 'response_time_seconds',
     help: 'Response time of API calls',
@@ -24,4 +30,4 @@ const responseSizeGauge = new client.Gauge({
     labelNames: ['api', 'statusCode'],
 });
 
-module.exports = { apiCallsCounter, responseTimeGauge, requestSizeGauge, responseSizeGauge, client };
+module.exports = { apiCallsCounter, responseTimeGauge, requestSizeGauge, responseSizeGauge, client, gaugecounter };

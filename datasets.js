@@ -3,7 +3,7 @@ const express = require("express");
 const app = express();
 const clientConnection = require("./connection.js");
 const responseTime = require('response-time');
-const { apiCallsCounter, responseTimeGauge, requestSizeGauge, responseSizeGauge, client } = require('./metrics');
+const { apiCallsCounter, responseTimeGauge, requestSizeGauge, responseSizeGauge, client, gaugecounter } = require('./metrics');
 app.use(express.json());
 
 
@@ -13,22 +13,34 @@ app.use(responseTime({ suffix: false }), (req, res, next) => {
     res.on('finish', () => {
       const responseSize = req.socket.bytesWritten;
       const responseTime = parseFloat(res.get('X-Response-Time'));
-      apiCallsCounter.labels({ api:req.method, statusCode: res.statusCode}).inc();
+      apiCallsCounter.labels({ api: req.method, statusCode: res.statusCode }).inc();
       /*
       responseTimeGauge.labels({ api:req.method, statusCode: res.statusCode, requestID: req.headers['postman-token']}).set(responseTime);
       requestSizeGauge.labels({ api:req.method, statusCode: res.statusCode, requestID: req.headers['postman-token']}).set(requestSize);
       responseSizeGauge.labels({ api:req.method, statusCode: res.statusCode, requestID: req.headers['postman-token']}).set(responseSize);
       */
-      responseTimeGauge.labels({ api:req.method, statusCode: res.statusCode}).set(responseTime);
-      requestSizeGauge.labels({ api:req.method, statusCode: res.statusCode}).set(requestSize);
-      responseSizeGauge.labels({ api:req.method, statusCode: res.statusCode,}).set(responseSize);
- 
+      gaugecounter.labels({ api: req.method, statusCode: res.statusCode }).inc();
+      responseTimeGauge.labels({ api: req.method, statusCode: res.statusCode }).inc(responseTime);
+      requestSizeGauge.labels({ api: req.method, statusCode: res.statusCode }).inc(requestSize);
+      responseSizeGauge.labels({ api: req.method, statusCode: res.statusCode }).inc(responseSize);
+
     });
   }
   next();
 });
 
-
+/*
+app.use((req, res, next) => {
+  if (req.path == "/metrics") {
+    res.on('finish', () => {
+    responseTimeGauge.reset();
+    requestSizeGauge.reset();
+    responseSizeGauge.reset();
+    })
+  }
+  next();
+});
+*/
 
 app.listen(8080, () => {
   console.log("Server is now listening at port 8080");
@@ -37,7 +49,11 @@ app.listen(8080, () => {
 app.get("/metrics", async (req, res) => {
   try {
     const metricsData = await client.register.metrics();
-    res.end(metricsData);
+    res.send(metricsData);
+    gaugecounter.reset();
+    responseTimeGauge.reset();
+    requestSizeGauge.reset();
+    responseSizeGauge.reset();
   } catch (error) {
     console.error("Error generating metrics:", error);
     res.status(500).send("Internal Server Error");
